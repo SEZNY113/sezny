@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" content="width=device-width,initial-scale=1.0">
+<title>Contre‑la‑montre – Générateur de départs</title>
+
+<!-- Tailwind & Font‑Awesome -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<!-- XLSX pour l’import Excel -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- SortableJS (drag & drop) -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
+
+<!-- jsPDF + AutoTable + html2canvas (export PDF « moderne ») -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn .3s ease-out forwards}
+.club-color{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:5px}
+.file-input-button{border:2px dashed #d1d5db;border-radius:.5rem;padding:2rem;text-align:center;cursor:pointer;transition:.3s;width:100%}
+.file-input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.dragging{background:#f0f9ff;border-color:#3b82f6}
+.sortable-ghost{opacity:.5;background:#c7d2fe}
+.sortable-drag{background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1)}
+tr.sortable-handle{cursor:move}
+</style>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+<div class="container mx-auto px-4 py-8">
+<div class="max-w-6xl mx-auto">
+
+<header class="text-center mb-8">
+  <h1 class="text-3xl font-bold text-blue-800 mb-2">
+    <i class="fas fa-stopwatch mr-2"></i>
+    Générateur de départs – Contre‑la‑montre
+  </h1>
+  <p class="text-gray-600">
+    Importez vos engagés, organisez l’ordre, puis exportez en CSV ou PDF.
+  </p>
+</header>
+
+<!-- ╔════════ IMPORT / PARAMÈTRES / SAISIE ════════╗ -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+
+  <!-- Import -->
+  <div class="flex flex-col mb-6">
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">Importation des engagés</h2>
+    <div class="relative mb-4">
+      <div class="file-input-button">
+        <div class="flex flex-col items-center">
+          <i class="fas fa-file-import text-4xl text-blue-500 mb-2"></i>
+          <p class="text-sm font-medium text-gray-700">Glissez‑déposez ou cliquez</p>
+          <p class="text-xs text-gray-500">CSV · XLS · XLSX</p>
+        </div>
+        <input id="fileInput" type="file" class="file-input" accept=".csv,.xls,.xlsx">
+      </div>
+    </div>
+    <div id="fileInfo"
+         class="hidden bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800 mb-4">
+      <i class="fas fa-info-circle mr-2"></i>
+      <span id="fileName"></span> — <span id="rowCount">0</span> coureurs
+    </div>
+  </div>
+
+  <!-- Paramètres -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Intervalle (min)</label>
+      <input id="interval" type="number" min="1" value="2"
+             class="w-full px-3 py-2 border rounded">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Heure de départ</label>
+      <input id="startTime" type="time" value="09:00"
+             class="w-full px-3 py-2 border rounded">
+    </div>
+    <div class="flex items-end">
+      <button id="generateBtn"
+              class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded">
+        <i class="fas fa-magic mr-2"></i> Préparer l’ordre par entité
+      </button>
+    </div>
+  </div>
+
+  <!-- Saisie manuelle -->
+  <div>
+    <div class="flex justify-between items-center mb-2">
+      <h2 class="text-lg font-semibold text-gray-800">Liste des participants</h2>
+      <div class="flex gap-2">
+        <button id="addRiderBtn"
+                class="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center">
+          <i class="fas fa-plus-circle mr-1"></i> Ajouter
+        </button>
+        <button id="clearAllBtn"
+                class="text-red-600 hover:text-red-800 text-sm font-medium flex items-center">
+          <i class="fas fa-trash-alt mr-1"></i> Tout effacer
+        </button>
+      </div>
+    </div>
+    <div id="ridersContainer"
+         class="max-h-96 overflow-y-auto border border-gray-200 rounded p-2"></div>
+  </div>
+</div>
+<!-- ╚══════════════════════════════════════════════╝ -->
+
+<!-- ╔════════ ORDRE INTERNE ════════╗ -->
+<div id="clubOrderSection" class="hidden bg-white rounded-lg shadow-md p-6 mb-8">
+  <div class="flex justify-between items-center mb-4">
+    <h2 class="text-xl font-semibold text-gray-800">Ordre interne par entité</h2>
+    <div class="text-sm text-gray-500"><span id="clubCount">0</span> entités</div>
+  </div>
+  <p class="text-sm text-gray-600 mb-4">
+    <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+    Glissez‑déposez pour définir l’ordre interne de chaque entité.
+  </p>
+  <div id="clubOrderContainer" class="space-y-6"></div>
+  <div class="mt-6 pt-4">
+    <button id="proceedBtn"
+            class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded">
+      <i class="fas fa-arrow-right mr-2"></i> Procéder à la génération
+    </button>
+  </div>
+</div>
+<!-- ╚═══════════════════════════════╝ -->
+
+<!-- ╔════════ RÉSULTATS & EXPORT ════════╗ -->
+<div id="resultsSection" class="hidden bg-white rounded-lg shadow-md p-6">
+  <div class="flex justify-between items-center mb-4">
+    <h2 class="text-xl font-semibold text-gray-800">Liste de départ</h2>
+    <div class="flex gap-2">
+      <button id="printBtn"   class="bg-gray-200  hover:bg-gray-300 text-gray-800 text-sm font-medium py-1.5 px-3 rounded"><i class="fas fa-print      mr-1"></i> Imprimer</button>
+      <button id="exportBtn"  class="bg-green-600 hover:bg-green-700 text-white    text-sm font-medium py-1.5 px-3 rounded"><i class="fas fa-file-export mr-1"></i> CSV</button>
+      <button id="exportPdfBtn" class="bg-red-600   hover:bg-red-700   text-white    text-sm font-medium py-1.5 px-3 rounded"><i class="fas fa-file-pdf  mr-1"></i> PDF</button>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">N°</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Heure</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Dossard</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Nom</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Prénom</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Sexe</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Licence</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Cat.</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Sous‑Cat.</th>
+          <th class="px-4 py-3 text-xs text-gray-500 uppercase">Entité&nbsp;Eng.</th>
+        </tr>
+      </thead>
+      <tbody id="resultsTable" class="bg-white divide-y divide-gray-200"></tbody>
+    </table>
+  </div>
+
+  <div class="mt-6 pt-4 border-t border-gray-200">
+    <h3 class="text-sm font-medium text-gray-700 mb-2">Légende des entités</h3>
+    <div id="clubLegend" class="flex flex-wrap gap-3"></div>
+  </div>
+</div>
+<!-- ╚════════════════════════════════╝ -->
+</div></div>
+
+<!-- ╔════════ SCRIPT ════════╗ -->
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+
+/* ---------- helpers & états ---------- */
+const $=(s,p=document)=>p.querySelector(s);
+const $$=(s,p=document)=>p.querySelectorAll(s);
+const trim=v=>String(v??'').trim();
+const palette=['bg-red-500','bg-blue-500','bg-green-500','bg-yellow-500','bg-purple-500',
+               'bg-pink-500','bg-indigo-500','bg-teal-500','bg-orange-500','bg-amber-500',
+               'bg-lime-500','bg-emerald-500','bg-cyan-500','bg-violet-500','bg-fuchsia-500'];
+let riders=[],displayed=[];
+
+/* ---------- ligne de saisie ---------- */
+function addRow(r={}){
+  const el=document.createElement('div');
+  el.className='rider flex items-center gap-3 mb-3 px-3 py-2 border rounded hover:bg-gray-50';
+  el.innerHTML=`
+  <div class="flex-grow"><div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+    <div class="md:col-span-1"><label class="text-xs text-gray-500">Dossard</label><input              class="rider-dossard w-full px-2 py-1 border rounded" value="${r.dossard||''}"></div>
+    <div class="md:col-span-2"><label class="text-xs text-gray-500">Nom</label><input required         class="rider-name    w-full px-2 py-1 border rounded" value="${r.name||''}"></div>
+    <div class="md:col-span-2"><label class="text-xs text-gray-500">Prénom</label><input required      class="rider-firstname w-full px-2 py-1 border rounded" value="${r.firstname||''}"></div>
+    <div class="md:col-span-1"><label class="text-xs text-gray-500">Sexe</label><select                class="rider-sex     w-full px-2 py-1 border rounded"><option value="M" ${r.sex!=='F'?'selected':''}>M</option><option value="F" ${r.sex==='F'?'selected':''}>F</option></select></div>
+    <div class="md:col-span-1"><label class="text-xs text-gray-500">Licence</label><input              class="rider-licence w-full px-2 py-1 border rounded" value="${r.licence||''}"></div>
+    <div class="md:col-span-1"><label class="text-xs text-gray-500">Cat.</label><input                 class="rider-category w-full px-2 py-1 border rounded" value="${r.category||''}"></div>
+    <div class="md:col-span-1"><label class="text-xs text-gray-500">Sous‑cat.</label><input            class="rider-subcategory w-full px-2 py-1 border rounded" value="${r.subcategory||''}"></div>
+    <div class="md:col-span-3"><label class="text-xs text-gray-500">Entité Eng.</label><input required class="rider-club    w-full px-2 py-1 border rounded" value="${r.club||''}"></div>
+  </div></div>
+  <button class="remove-rider text-red-500 hover:text-red-700 px-2"><i class="fas fa-times"></i></button>`;
+  $('#ridersContainer').appendChild(el);
+}
+
+/* ---------- import CSV / Excel ---------- */
+function norm(s){return trim(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+function mapH(h){
+  const t=norm(h);
+  if(/^pr[ée]nom/.test(t))return'prenom';
+  if(/^nom$/.test(t))return'nom';
+  if(/club|entite/.test(t))return'club';
+  if(/^cat(egorie)?/.test(t))return'categorie';
+  if(/^sous.*cat/.test(t))return'souscategorie';
+  if(/^dossard/.test(t))return'dossard';
+  if(/^sexe$/.test(t))return'sexe';
+  if(/^n.*licence|licence$/.test(t))return'licence';
+  return t;
+}
+function postCat(r){
+  /* Cat complète = chiffre => la basculer en sous‑cat & fixer Cat = Open */
+  if(/^\d+$/.test(r.category||'') && !r.subcategory){
+    r.subcategory=r.category; r.category='Open';
+  }
+  return r;
+}
+function toR(o){return postCat({
+  dossard:trim(o.dossard||o.licence||''),
+  name:trim(o.nom||''), firstname:trim(o.prenom||''),
+  sex:trim(o.sexe||''), licence:trim(o.licence||''),
+  category:trim(o.categorie||''), subcategory:trim(o.souscategorie||''),
+  club:trim(o.club||'')
+});}
+function findHeader(lines){
+  for(let i=0;i<20 && i<lines.length;i++){
+    const l=lines[i].toLowerCase();
+    if(l.includes('nom')&&l.includes('prénom')&&l.includes('club'))return i;
+  }return-1;
+}
+function parseCSV(f){
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const txt=e.target.result.replace(/\r/g,'');
+    const sep=txt.includes(';')?';':',';
+    const lines=txt.split('\n').filter(l=>l.trim());
+    const h=findHeader(lines); if(h<0)return alert('En‑têtes manquants');
+    const heads=lines[h].split(sep).map(mapH);
+    $('#ridersContainer').innerHTML=''; riders=[];
+    for(let i=h+1;i<lines.length;i++){
+      const vals=lines[i].split(sep).map(trim);
+      if(vals.every(v=>!v))continue;
+      const o={}; heads.forEach((k,j)=>o[k]=vals[j]||'');
+      const r=toR(o);
+      if(r.name&&r.firstname&&r.club){r.originalIndex=riders.length;riders.push(r);addRow(r);}
+    }
+    $('#fileInfo').classList.remove('hidden');$('#fileName').textContent=f.name;$('#rowCount').textContent=riders.length;
+  };
+  fr.readAsText(f);
+}
+function parseXLS(f){
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    const h=rows.findIndex(r=>r.join(' ').toLowerCase().includes('nom')&&r.join(' ').toLowerCase().includes('prénom')&&r.join(' ').toLowerCase().includes('club'));
+    if(h<0)return alert('En‑têtes manquants');
+    const heads=rows[h].map(mapH);
+    $('#ridersContainer').innerHTML=''; riders=[];
+    for(let i=h+1;i<rows.length;i++){
+      const row=rows[i]; if(!row||row.every(c=>!String(c||'').trim()))continue;
+      const o={}; heads.forEach((k,j)=>o[k]=trim(row[j]||''));
+      const r=toR(o);
+      if(r.name&&r.firstname&&r.club){r.originalIndex=riders.length;riders.push(r);addRow(r);}
+    }
+    $('#fileInfo').classList.remove('hidden');$('#fileName').textContent=f.name;$('#rowCount').textContent=riders.length;
+  };
+  fr.readAsArrayBuffer(f);
+}
+
+/* ---------- préparation ordre interne ---------- */
+function buildSections(){
+  const container=$('#clubOrderContainer'); container.innerHTML='';
+  const groups={}; riders.forEach(r=>(groups[r.club]??=[]).push(r));
+  $('#clubCount').textContent=Object.keys(groups).length;
+  Object.entries(groups).forEach(([club,list],i)=>{
+    const sec=document.createElement('div'); sec.className='club-section fade-in'; sec.dataset.club=club; sec.style.animationDelay=`${i*.1}s`;
+    sec.innerHTML=`<div class="flex items-center mb-2"><span class="club-color ${palette[i%palette.length]}"></span><h3 class="text-lg font-medium text-gray-800">${club} (${list.length})</h3></div><div id="box-${i}" class="space-y-2 border border-gray-200 rounded p-3 bg-gray-50"></div>`;
+    container.appendChild(sec);
+    const box=sec.querySelector('#box-'+i);
+    list.forEach(r=>box.insertAdjacentHTML('beforeend',`<div data-id="${r.originalIndex}" class="flex items-center gap-2 p-2 border rounded bg-white cursor-move"><span class="text-xs font-medium text-gray-500">#${r.dossard||'—'}</span><span class="text-sm text-gray-700">${r.firstname} ${r.name}</span></div>`));
+    new Sortable(box,{animation:150,ghostClass:'sortable-ghost',dragClass:'sortable-drag'});
+  });
+}
+
+/* ---------- round‑robin pour répartir entités ---------- */
+const roundRobin=map=>{
+  const keys=Object.keys(map).sort((a,b)=>map[b].length-map[a].length);
+  const out=[]; let lv=0,again=true;
+  while(again){
+    again=false;
+    keys.forEach(k=>{if(lv<map[k].length){out.push(map[k][lv]);again=true;}});
+    lv++;
+  }
+  return out;
+};
+
+/* ---------- affichage résultats ---------- */
+function showResults(arr){
+  const counts={}; arr.forEach(r=>counts[r.club]=(counts[r.club]||0)+1);
+  const col={}; const legend=$('#clubLegend'); legend.innerHTML='';
+  Object.keys(counts).forEach((c,i)=>{col[c]=palette[i%palette.length];legend.insertAdjacentHTML('beforeend',`<div class="flex items-center text-sm"><span class="club-color ${col[c]}"></span>${c} (${counts[c]})</div>`);});
+  const body=$('#resultsTable'); body.innerHTML='';
+  arr.forEach(r=>body.insertAdjacentHTML('beforeend',`
+    <tr class="sortable-handle" data-id="${r.originalIndex}">
+      <td class="px-4 py-2 text-sm font-semibold">${r.number}</td>
+      <td class="px-4 py-2 text-sm">${r.startTime}</td>
+      <td class="px-4 py-2 text-sm">${r.dossard}</td>
+      <td class="px-4 py-2 text-sm">${r.name}</td>
+      <td class="px-4 py-2 text-sm">${r.firstname}</td>
+      <td class="px-4 py-2 text-sm">${r.sex}</td>
+      <td class="px-4 py-2 text-sm">${r.licence}</td>
+      <td class="px-4 py-2 text-sm">${r.category}</td>
+      <td class="px-4 py-2 text-sm">${r.subcategory}</td>
+      <td class="px-4 py-2 text-sm flex items-center"><span class="club-color ${col[r.club]}"></span>${r.club}</td>
+    </tr>`));
+  new Sortable(body,{handle:'.sortable-handle',animation:150,ghostClass:'sortable-ghost',onEnd:updateNumbers});
+}
+function updateNumbers(){
+  const gap=+$('#interval').value||2; const [h0,m0]=$('#startTime').value.split(':').map(Number);
+  displayed=[...$('#resultsTable').rows].map((tr,i)=>{
+    const r=riders.find(x=>x.originalIndex==tr.dataset.id);
+    const tot=h0*60+m0+i*gap;
+    r.number=i+1; r.startTime=`${String(Math.floor(tot/60)%24).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;
+    tr.cells[0].textContent=r.number; tr.cells[1].textContent=r.startTime;
+    return r;
+  });
+}
+
+/* ---------- génération finale ---------- */
+function generate(){
+  const orderMap={};
+  document.querySelectorAll('.club-section').forEach(sec=>{
+    orderMap[sec.dataset.club]=[...sec.querySelectorAll('[data-id]')].map(el=>+el.dataset.id);
+  });
+  const sequence=roundRobin(orderMap).map(id=>riders.find(r=>r.originalIndex===id));
+  const gap=+$('#interval').value||2; const [h0,m0]=$('#startTime').value.split(':').map(Number);
+  sequence.forEach((r,i)=>{const t=h0*60+m0+i*gap;r.number=i+1;r.startTime=`${String(Math.floor(t/60)%24).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;});
+  displayed=sequence;
+  showResults(sequence);
+  $('#clubOrderSection').classList.add('hidden');
+  $('#resultsSection').classList.remove('hidden').scrollIntoView({behavior:'smooth'});
+}
+
+/* ---------- export CSV ---------- */
+function exportCSV(){
+  const rows=[['N°','Heure','Dossard','Nom','Prénom','Sexe','Licence','Catégorie','Sous‑Cat.','Entité Eng.']];
+  (displayed.length?displayed:riders).forEach(r=>rows.push([r.number||'',r.startTime||'',r.dossard||'',r.name,r.firstname,r.sex,r.licence,r.category,r.subcategory,r.club]));
+  const blob=new Blob(['\uFEFF'+rows.map(r=>r.join(';')).join('\n')],{type:'text/csv;charset=utf-8;'});
+  const link=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'liste_depart_clm.csv',style:'visibility:hidden'});
+  document.body.appendChild(link); link.click(); link.remove();
+}
+
+/* ---------- export PDF (jsPDF + AutoTable) ---------- */
+async function exportPDF(){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+  doc.setFontSize(18);
+  doc.text('Liste de départ – Contre‑la‑montre',40,40);
+  doc.setFontSize(10);
+  doc.setTextColor('#666');
+  doc.text(`Généré le : ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,40,60);
+
+  /* construction du tableau AutoTable */
+  const head=[['N°','Heure','Dossard','Nom','Prénom','Cat.','S‑Cat.','Entité']];
+  const body=(displayed.length?displayed:riders).map(r=>[
+      r.number||'',r.startTime||'',r.dossard||'',
+      r.name,r.firstname,r.category,r.subcategory,r.club
+  ]);
+  doc.autoTable({
+    startY:80,
+    head, body,
+    theme:'grid',
+    styles:{fontSize:8,cellPadding:3},
+    headStyles:{fillColor:[59,130,246],textColor:255},
+    margin:{left:40,right:40}
+  });
+
+  /* footer page */
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setFontSize(8); doc.setTextColor('#999');
+    doc.text(`Page ${i}/${pageCount}`,doc.internal.pageSize.getWidth()-60,doc.internal.pageSize.getHeight()-20);
+  }
+  doc.save('liste_depart_clm.pdf');
+}
+
+/* ---------- events ---------- */
+$('#addRiderBtn').onclick=addRow;
+$('#clearAllBtn').onclick=()=>{if(confirm('Tout effacer ?')){$('#ridersContainer').innerHTML='';riders=[];displayed=[];$('#clubOrderSection').classList.add('hidden');}};
+$('#fileInput').onchange=e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const ext=f.name.split('.').pop().toLowerCase();
+  ext==='csv'?parseCSV(f):['xls','xlsx'].includes(ext)?parseXLS(f):alert('Format non pris en charge');
+};
+$('#ridersContainer').addEventListener('click',e=>{if(e.target.closest('.remove-rider'))e.target.closest('.rider').remove();});
+$('#generateBtn').onclick=()=>{
+  riders=[...$$('.rider')].map((n,i)=>({
+    dossard:trim($('.rider-dossard',n).value),
+    name:trim($('.rider-name',n).value),
+    firstname:trim($('.rider-firstname',n).value),
+    sex:trim($('.rider-sex',n).value),
+    licence:trim($('.rider-licence',n).value),
+    category:trim($('.rider-category',n).value),
+    subcategory:trim($('.rider-subcategory',n).value),
+    club:trim($('.rider-club',n).value),
+    originalIndex:i
+  })).filter(r=>r.name&&r.firstname&&r.club).map(postCat);
+  if(!riders.length)return alert('Ajoutez au moins un coureur.');
+  buildSections();
+  $('#clubOrderSection').classList.remove('hidden').scrollIntoView({behavior:'smooth'});
+};
+$('#proceedBtn').onclick=generate;
+$('#printBtn').onclick=()=>window.print();
+$('#exportBtn').onclick=exportCSV;
+$('#exportPdfBtn').onclick=exportPDF;
+
+/* drag fichier */
+const drop=$('.file-input-button');
+['dragenter','dragover','dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();}));
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,()=>drop.classList.add('dragging')));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,()=>drop.classList.remove('dragging')));
+drop.addEventListener('drop',e=>{if(e.dataTransfer.files.length){$('#fileInput').files=e.dataTransfer.files;$('#fileInput').dispatchEvent(new Event('change'));}});
+
+/* ligne initiale */
+addRow();
+});
+</script>
+<!-- ╚═══════════════════════════╝ -->
+</body>
+</html>
