@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Classement Cycliste</title>
+  <style>
+    table { border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <h1>Classement</h1>
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".csv">
+    <button type="submit">Charger CSV</button>
+  </form>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Nom</th><th>Temps</th></tr>
+    </thead>
+    <tbody>
+      {% for i, rider in enumerate(rankings, start=1) %}
+      <tr>
+        <td>{{ i }}</td>
+        <td>{{ rider.name }}</td>
+        <td>{{ rider.formatted_time() }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
