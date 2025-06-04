@@ -57,3 +57,23 @@ Get help: [Post in our discussion board](https://github.com/orgs/skills/discussi
 &copy; 2023 GitHub &bull; [Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md) &bull; [MIT License](https://gh.io/mit)
 
 </footer>
+
+## Flask ranking demo
+
+This repository includes a small demonstration of a web application to display cycling race rankings from a CSV file. It is built with [Flask](https://flask.palletsprojects.com/).
+
+### Prerequisites
+Install Flask with:
+
+```bash
+pip install Flask
+```
+
+### Usage
+Run the application from the repository root:
+
+```bash
+python ranking_app/app.py
+```
+
+Then open `http://localhost:5000` in your browser and upload a CSV file containing two columns: `name` and `time` (formatted as `HH:MM:SS`). The page will display the sorted classification.
